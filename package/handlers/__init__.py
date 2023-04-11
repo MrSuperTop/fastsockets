@@ -3,18 +3,20 @@ from typing import Any
 
 from pydantic import BaseModel
 
-NeededArgumentMapping = dict[str, type[BaseModel]]
+from package.types.Message import Message
+
+ParsableArgumentMapping = dict[str, tuple[type[BaseModel], Any]]
 JsonResponse = BaseModel
 
 
 class BaseActionHandler(ABC):
     def __init__(
         self,
-        name: str,
-        argument_mapping: NeededArgumentMapping
+        action: str,
+        data_validator: type[Message]
     ) -> None:
-        self.name = name
-        self.argument_object_mapping: NeededArgumentMapping = argument_mapping
+        self.action = action
+        self.data_validator = data_validator
 
     @abstractmethod
     async def __call__(self, *args: Any, **kwds: Any) -> JsonResponse:
