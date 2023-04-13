@@ -1,3 +1,4 @@
+from abc import ABC
 from typing import Generic, TypeVar
 
 from pydantic import BaseModel
@@ -5,6 +6,9 @@ from pydantic import BaseModel
 Payload = TypeVar('Payload', bound=BaseModel)
 
 
-class Message(BaseModel, Generic[Payload]):
+class BaseMessage(ABC, BaseModel, Generic[Payload]):
     action: str
     payload: Payload
+
+    class Config:
+        extra = 'allow'
