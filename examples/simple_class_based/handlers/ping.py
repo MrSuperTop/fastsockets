@@ -1,5 +1,4 @@
 from examples.simple_class_based.models import (
-    PingMessage,
     PingPayload,
     PongMessage,
     PongPayload,
@@ -7,8 +6,7 @@ from examples.simple_class_based.models import (
 from fastsockets.handlers.BaseActionHandler import BaseActionHandler
 
 
-# TODO: Do we really need to provide a PingMessage here? We have managed to create it dinamically previously.
-class PingHandler(BaseActionHandler[PingMessage, PongMessage]):
+class PingHandler(BaseActionHandler[PongMessage]):
     async def handle(
         self,
         payload: PingPayload

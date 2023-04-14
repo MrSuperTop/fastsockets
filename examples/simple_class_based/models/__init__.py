@@ -9,11 +9,6 @@ class PingPayload(BaseModel):
     message: str
 
 
-class PingMessage(BaseMessage):
-    action: Literal['ping']
-    payload: PingPayload
-
-
 class PongPayload(BaseModel):
     message: str
     status: bool
