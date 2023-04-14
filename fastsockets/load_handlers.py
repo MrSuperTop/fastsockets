@@ -1,15 +1,14 @@
 from importlib import import_module
-from inspect import isclass
+from inspect import isclass, isfunction
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Iterable
 
-from pydantic import BaseModel, create_model
-
-from fastsockets.handlers import BaseActionHandler, HandlerResponse
-from fastsockets.types.BaseMessage import BaseMessage
+from fastsockets.create_handler import create_handler
+from fastsockets.handlers.BaseActionHandler import BaseActionHandler
+from fastsockets.handlers.handler import handler
 
 Handlers = dict[str, BaseActionHandler]
-ParsableArgumentMapping = dict[str, tuple[type[BaseModel], Any]]
+
 
 def load_handlers(
     handler_files: Iterable[Path]
@@ -27,41 +26,51 @@ def load_handlers(
         for attribute_name in dir(module):
             attribute = getattr(module, attribute_name)
 
-            if not isclass(attribute) or BaseActionHandler not in attribute.__bases__:
+            is_class_based = isclass(attribute) \
+                and isinstance(BaseActionHandler, attribute)
+
+            # * In case the handler was defined usign a class
+            if is_class_based:
+                HandlerClass: type[BaseActionHandler] = attribute
+                action_name = module.__name__.rpartition('.')[2]
+
+                # * Ignored, because the type checker considers HandlerClass to be of type "type" and not of type "type[BaseActionHandler]"
+                # * For that reason, the property is not defined, but it should be.
+                # * I am not really sure hot to properly type it so it's working the right way and was not able to find anything for now
+
+                handlers[action_name] = create_handler(
+                    action_name,
+                    HandlerClass.handle # type: ignore
+                )
+
                 continue
 
-            handler: type[BaseActionHandler] = attribute
-            action_name = module.__name__.rpartition('.')[2]
-            response_type: HandlerResponse = None
-            parsable_objects: ParsableArgumentMapping = {}
+            # * In case the handler was defined with the help of the "handler" decorator
+            is_wrapped_function = isfunction(attribute) \
+                and hasattr(attribute, '__wrapped__')
 
-            # * Ignored, because the type checker considers handler to be of type "type" and not of type "type[BaseActionHandler]"
-            # * For that reason, the property is not defined, but it should be.
-            # * I am not really sure hot to properly type it so it's working the right way and was not able to find anything for now
+            if not is_wrapped_function:
+                continue
 
-            for arg_name, arg_type in handler.handle.__annotations__.items(): # type: ignore
-                if arg_name == 'return':
-                    response_type = arg_type
-                    continue
+            wrapped_function = getattr(attribute, '__wrapped__')
+            is_decorator_based = hasattr(attribute, '__decorators__') \
+                and handler in getattr(attribute, '__decorators__') \
+                and hasattr(attribute, 'action_name')
 
-                if not isclass(arg_type) or BaseModel not in arg_type.__bases__:
-                    continue
+            if not is_decorator_based:
+                continue
 
-                parsable_objects[arg_name] = (arg_type, ...)
-
-            HandlerClass: BaseActionHandler = attribute
-            DataValidator = create_model(
-                f'{action_name.capitalize()}Validator',
-                __base__=BaseMessage,
-                **parsable_objects
+            action_name = getattr(attribute, 'action_name')
+            DynamicHandler = type(
+                f'{action_name.capitalize()}Handler',
+                (BaseActionHandler, ),
+                {}
             )
 
-            handlers[action_name] = HandlerClass(
+            handlers[action_name] = create_handler(
                 action_name,
-                # TODO: Other types of object could be in the definition of the handler and this will likely break, as we provide unsufficient amount of params to the handler in the HandlersExecutor
-                parsable_objects,
-                DataValidator,
-                response_type
+                wrapped_function,
+                DynamicHandler
             )
 
     return handlers
