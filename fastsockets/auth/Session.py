@@ -3,11 +3,12 @@ import json
 import secrets
 from typing import Any, Callable, Coroutine, Generic, Self, TypeVar
 
-from fastapi import Cookie, Response
+from fastapi import Cookie, Depends, Response
 from pydantic import BaseModel
 from redis.asyncio import Redis
 
 from examples.auth.endpoints.exceptions import NOT_AUTHENTICATED
+from examples.auth.get_redis import get_redis
 
 
 class BaseSessionData(BaseModel):
@@ -113,19 +114,19 @@ class Session(Generic[SessionData]):
 
 
 def current_session(
-    redis_instance: Redis,
     session_data_parser: type[SessionData],
     redis_prefix: str = DEFAULT_REDIS_SESSION_PREDIX,
     cookie_name: str = DEFUALT_SESSION_COOKIE_NAME
 ) -> Callable[..., Coroutine[Any, Any, Session[SessionData]]]:
     async def inner(
+        redis: Redis = Depends(get_redis),
         session_id: str | None = Cookie(default=None)
     ) -> Session[SessionData]:
         if session_id is None:
             raise NOT_AUTHENTICATED
 
         session = await Session.create_and_load(
-            redis_instance,
+            redis,
             session_id,
             session_data_parser,
             redis_prefix,

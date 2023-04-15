@@ -1,16 +1,17 @@
 from argon2.exceptions import VerificationError
 from fastapi import APIRouter, Depends, Response
+from redis.asyncio import Redis
 
 from examples.auth.db.models.User import User
 from examples.auth.endpoints.exceptions import (
     INVALID_USER_CREDENTIALS,
     USER_ALREADY_EXISTS,
 )
+from examples.auth.get_redis import get_redis
 from examples.auth.hasher import ph
 from examples.auth.models.login import LoginInput, LoginResponse, PublicUser
 from examples.auth.models.logout import LogoutResponse
 from examples.auth.models.register import RegisterInput, RegisterResponse
-from examples.auth.redis import redis
 from examples.auth.session import SessionData, session_provider
 from fastsockets.auth.Session import Session
 
@@ -44,6 +45,7 @@ async def get_user(usernameOrEmail: str) -> User | None:
 async def login(
     credentials: LoginInput,
     response: Response,
+    redis: Redis = Depends(get_redis)
 ) -> LoginResponse:
     user_predicate = await get_user(credentials.usernameOrEmail)
     if user_predicate is None:
@@ -72,6 +74,7 @@ async def login(
 async def register(
     data: RegisterInput,
     response: Response,
+    redis: Redis = Depends(get_redis)
 ) -> RegisterResponse:
     user_exists = any([await get_user(data.username), await get_user(data.email)])
     if user_exists:
