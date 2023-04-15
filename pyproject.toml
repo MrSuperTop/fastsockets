@@ -11,6 +11,8 @@ python = "^3.11"
 uvicorn = "^0.21.1"
 fastapi = "^0.95.0"
 websockets = "^11.0.1"
+argon2-cffi = "^21.3.0"
+redis = {extras = ["hiredis"], version = "^4.5.4"}
 
 
 [build-system]
