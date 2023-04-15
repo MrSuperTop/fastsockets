@@ -64,6 +64,7 @@ async def login(
     )
 
     session.set_cookie(response)
+    await session.save()
 
     return LoginResponse(
         user=PublicUser.parse_obj(user_predicate)
@@ -90,6 +91,7 @@ async def register(
     session_id = Session.generate_session_id()
     new_session = Session(redis, session_id)
     new_session.set_cookie(response)
+    await new_session.save()
 
     # TODO: Implement storing session data. Either using redis or in the primary db, as this data is not that latency critical
 

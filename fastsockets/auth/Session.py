@@ -91,6 +91,14 @@ class Session(Generic[SessionData]):
         return session
 
 
+    async def save(self):
+        if self._data is None:
+            return
+
+        raw_data = self._data.json()
+        await self.redis.set(self._redis_key, raw_data)
+
+
     # TODO: Implement asymetric encryption for the session_id in a cookie, as far as I am concerned it's called "signed cookies"
     def set_cookie(self, response: Response) -> None:
         response.set_cookie(
