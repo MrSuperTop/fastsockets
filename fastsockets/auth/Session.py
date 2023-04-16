@@ -1,49 +1,52 @@
 # TODO: Move session code
 import json
-import pickle
 import secrets
 from typing import Any, Callable, Coroutine, Generic, Self, TypeVar
 
 from fastapi import Cookie, Depends, Response
 from pydantic import BaseModel
 from redis.asyncio import Redis
-import redis
+
 from examples.auth.endpoints.exceptions import NOT_AUTHENTICATED
 from examples.auth.get_redis import get_redis
-from examples.auth.db.models.User import User
 
 
 class BaseSessionData(BaseModel):
-    user_id: str
+    user_id: int
+
 
 DEFAULT_REDIS_SESSION_PREDIX = 'session'
 DEFUALT_SESSION_COOKIE_NAME = 'session_id'
+DEFAULT_SESSION_ID_LENGHT = 32
 
 SessionData = TypeVar('SessionData', bound=BaseSessionData)
 
 
 class Session(Generic[SessionData]):
-    redis = None
-
     def __init__(
         self,
-        # redis_connection: Redis,
+        redis_connection: Redis,
         session_id: str,
-        user: User,
-        session_data_parser: type[SessionData] = BaseSessionData,
+        session_data_parser: type[SessionData],
         redis_prefix: str = DEFAULT_REDIS_SESSION_PREDIX,
         cookie_name: str = DEFUALT_SESSION_COOKIE_NAME,
     ) -> None:
         super().__init__()
 
-        # self.redis = redis_connection
+        self.redis = redis_connection
 
         self._data: SessionData | None = None
         self.data_parser = session_data_parser
         self.session_id = session_id
         self.redis_prefix = redis_prefix
         self.cookie_name = cookie_name
-        self.user = user
+
+
+    def _parse_data(self, raw_json: Any) -> SessionData | None:
+        if self._data is None:
+            return
+
+        return self.data_parser.parse_obj(raw_json)
 
 
     @staticmethod
@@ -64,12 +67,20 @@ class Session(Generic[SessionData]):
         return self._data
 
 
+    @data.setter
+    def data(self, new_value: SessionData):
+        self._data = new_value
+
+
     async def load(self) -> SessionData | None:
         raw_json = await self.redis.get(self._redis_key)
         if raw_json is None:
             return
 
         parsed_json = json.loads(raw_json)
+        if self.data_parser is None:
+            return
+
         self._data = self.data_parser.parse_obj(parsed_json)
 
         return self._data
@@ -78,26 +89,45 @@ class Session(Generic[SessionData]):
     @classmethod
     async def create_and_load(
         cls,
-        # redis_connection: Redis,
+        redis_connection: Redis,
         session_id: str,
         session_data_parser: type[SessionData],
-        user: User,
         redis_prefix: str = 'session',
         cookie_name: str = 'session_id'
     ) -> Self:
         # TODO: Think a more dynamic and better way to do this. This works for now
         session = cls(
-            # redis_connection,
+            redis_connection,
             session_id,
-            user,
             session_data_parser,
             redis_prefix,
             cookie_name
         )
-        session._data = session_id
 
-        await cls.redis.set(session_id, pickle.dumps(session))
-        await cls.redis.sadd(str(user.id), pickle.dumps(session))
+        await session.load()
+
+        return session
+
+
+    @classmethod
+    async def create_and_save(
+        cls,
+        redis_connection: Redis,
+        session_data: SessionData,
+        redis_prefix: str = 'session',
+        cookie_name: str = 'session_id'
+    ) -> Self:
+        session_id = cls.generate_session_id(DEFAULT_SESSION_ID_LENGHT)
+        session = cls(
+            redis_connection,
+            session_id,
+            session_data.__class__,
+            redis_prefix,
+            cookie_name
+        )
+
+        session.data = session_data
+        await session.save()
 
         return session
 
@@ -105,7 +135,6 @@ class Session(Generic[SessionData]):
     async def save(self):
         if self._data is None:
             return
-
 
         raw_data = self._data.json()
         await self.redis.set(self._redis_key, raw_data)
@@ -133,41 +162,28 @@ class Session(Generic[SessionData]):
         self.delete_cookie(response)
 
 
-async def get_current_session_by_cookie(session_id: str = Cookie(default=None)) -> Session[SessionData]:
-    try:
-        session = await Session.redis.get(session_id)
-    except redis.exceptions.DataError:
-        raise NOT_AUTHENTICATED
+SessionProvider = Callable[..., Coroutine[Any, Any, Session[SessionData]]] 
 
-    if session is None:
-        # TODO implement errors in websocket
-        raise NOT_AUTHENTICATED
+def current_session(
+    session_data_parser: type[SessionData],
+    redis_prefix: str = DEFAULT_REDIS_SESSION_PREDIX,
+    cookie_name: str = DEFUALT_SESSION_COOKIE_NAME
+) -> SessionProvider:
+    async def inner(
+        redis: Redis = Depends(get_redis),
+        session_id: str = Cookie()
+    ) -> Session[SessionData]:
+        if session_id is None:
+            raise NOT_AUTHENTICATED
 
-    session = pickle.loads(session)
-    return session
+        session = await Session.create_and_load(
+            redis,
+            session_id,
+            session_data_parser,
+            redis_prefix,
+            cookie_name
+        )
 
+        return session
 
-# def current_session(
-#     session_data_parser: type[SessionData],
-#     redis_prefix: str = DEFAULT_REDIS_SESSION_PREDIX,
-#     cookie_name: str = DEFUALT_SESSION_COOKIE_NAME
-# ) -> Callable[..., Coroutine[Any, Any, Session[SessionData]]]:
-#     async def inner(
-#         redis: Redis = Depends(get_redis),
-#         session: Session[SessionData] = Depends(get_current_session_by_cookie)
-#
-#     ) -> Session[SessionData]:
-#         if session is None:
-#             raise NOT_AUTHENTICATED
-#
-#         # session = await Session.create_and_load(
-#         #     session_id,
-#         #     session_data_parser,
-#         #     # user,
-#         #     redis_prefix,
-#         #     cookie_name
-#         # )
-#
-#         return session
-#
-#     return inner
+    return inner

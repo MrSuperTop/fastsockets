@@ -2,18 +2,18 @@ from argon2.exceptions import VerificationError
 from fastapi import APIRouter, Depends, Response
 from redis.asyncio import Redis
 
-from examples.websockets_auth.db.models.User import User
-from examples.websockets_auth.endpoints.exceptions import (
+from examples.auth.db.models.User import User
+from examples.auth.endpoints.exceptions import (
     INVALID_USER_CREDENTIALS,
     USER_ALREADY_EXISTS,
+    USER_NOT_FOUND,
 )
-from examples.websockets_auth.get_redis import redis
-from examples.websockets_auth.hasher import ph
-from examples.websockets_auth.models.login import LoginInput, LoginResponse, PublicUser
-from examples.websockets_auth.models.logout import LogoutResponse
-from examples.websockets_auth.models.register import RegisterInput, RegisterResponse
-from examples.websockets_auth.session import SessionData
-from fastsockets.auth.Session import get_current_session_by_cookie
+from examples.auth.get_redis import get_redis
+from examples.auth.hasher import ph
+from examples.auth.models.login import LoginInput, LoginResponse, PublicUser
+from examples.auth.models.logout import LogoutResponse
+from examples.auth.models.register import RegisterInput, RegisterResponse
+from examples.auth.session import SessionData, session_provider
 from fastsockets.auth.Session import Session
 
 router = APIRouter()
@@ -42,10 +42,20 @@ async def get_user(usernameOrEmail: str) -> User | None:
         return None
 
 
+async def get_user_by_id(user_id: int) -> User | None:
+    try:
+        return next(
+            user for user in users if user.id == user_id
+        )
+    except StopIteration:
+        return None
+
+
 @router.post('/login')
 async def login(
     credentials: LoginInput,
     response: Response,
+    redis: Redis = Depends(get_redis)
 ) -> LoginResponse:
     user_predicate = await get_user(credentials.usernameOrEmail)
     if user_predicate is None:
@@ -56,11 +66,13 @@ async def login(
     except VerificationError:
         raise INVALID_USER_CREDENTIALS
 
-    session_id = Session.generate_session_id()
-    session = await Session.create_and_load(
-        session_id,
-        SessionData,
-        user_predicate
+    session_data = SessionData(
+        user_id=user_predicate.id
+    )
+
+    session = await Session.create_and_save(
+        redis,
+        session_data
     )
 
     session.set_cookie(response)
@@ -74,6 +86,7 @@ async def login(
 async def register(
     data: RegisterInput,
     response: Response,
+    redis: Redis = Depends(get_redis)
 ) -> RegisterResponse:
     user_exists = any([await get_user(data.username), await get_user(data.email)])
     if user_exists:
@@ -81,20 +94,23 @@ async def register(
 
     new_user = User.parse_obj({
         "id": users[-1].id + 1,
-        **data.dict(),
+        **data.dict()
     })
-    new_user.password = ph.hash(data.password)
+
     users.append(new_user)
 
-    session_id = Session.generate_session_id()
-
-    session = await Session.create_and_load(
-        session_id,
-        SessionData,
-        new_user
+    session_data = SessionData(
+        user_id=new_user.id
     )
 
-    session.set_cookie(response)
+    new_session = await Session.create_and_save(
+        redis,
+        session_data
+    )
+
+    new_session.set_cookie(response)
+
+    # TODO: Implement storing session data. Either using redis or in the primary db, as this data is not that latency critical
 
     return RegisterResponse(
         user=PublicUser.parse_obj(new_user)
@@ -104,10 +120,22 @@ async def register(
 @router.post('/logout')
 async def logout(
     response: Response,
-    session: Session[SessionData] = Depends(get_current_session_by_cookie)
+    session: Session[SessionData] = Depends(session_provider)
 ) -> LogoutResponse:
     await session.destroy(response)
 
     return LogoutResponse(
         success=True
     )
+
+
+@router.get('/me')
+async def me(
+    session: Session[SessionData] = Depends(session_provider)
+) -> PublicUser:
+    user_predicate = await get_user_by_id(session.data.user_id)
+    if user_predicate is None:
+        raise USER_NOT_FOUND
+
+    public_user = PublicUser(**user_predicate.dict())
+    return public_user
