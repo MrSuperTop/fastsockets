@@ -1,8 +1,9 @@
-from fastsockets.auth.Session import BaseSessionData, current_session
+from fastsockets.auth.Session import BaseSessionData
+from fastsockets.auth.SessionProvider import SessionProvider, EXAMPLE_SIGN_SECRET
 
 
 class SessionData(BaseSessionData):
     ...
 
 
-session_provider = current_session(SessionData)
+session_provider = SessionProvider(SessionData, EXAMPLE_SIGN_SECRET)

@@ -103,6 +103,7 @@ async def register(
         user_id=new_user.id
     )
 
+    # FIXME
     new_session = await Session.create_and_save(
         redis,
         session_data
