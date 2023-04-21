@@ -3,11 +3,11 @@ import secrets
 from typing import Any, Callable, Generic, Self, TypeVar
 
 from fastapi import Response
-from itsdangerous import BadSignature, Serializer
+from itsdangerous import BadSignature, Serializer, URLSafeSerializer
 from pydantic import BaseModel
 from redis.asyncio import Redis
 
-from examples.auth.endpoints.exceptions import NOT_AUTHENTICATED
+from fastsockets.exceptions import NOT_AUTHENTICATED
 
 
 class BaseSessionData(BaseModel):
@@ -22,11 +22,11 @@ SessionData = TypeVar('SessionData', bound=BaseSessionData)
 
 
 class Session(Generic[SessionData]):
-    # TODO: Create more extensible API for passing CookieSerialize and other stuff
+    # TODO: Create more extensible API for passing CookieSerializer and other stuff
     def __init__(
         self,
         redis_connection: Redis,
-        signed_session_id: str,
+        session_id: str,
         session_data_parser: type[SessionData],
         cookie_sign_key: str,
         redis_prefix: str = DEFAULT_REDIS_SESSION_PREDIX,
@@ -37,11 +37,6 @@ class Session(Generic[SessionData]):
         serializer_provider = Session.get_cookie_serializer(cookie_sign_key)
         serializer = serializer_provider()
 
-        try:
-            session_id = serializer.loads(signed_session_id)
-        except BadSignature:
-            raise NOT_AUTHENTICATED
-
         self.redis = redis_connection
         self.serializer = serializer
 
@@ -51,36 +46,32 @@ class Session(Generic[SessionData]):
         self.redis_prefix = redis_prefix
         self.cookie_name = cookie_name
 
-
     def _parse_data(self, raw_json: Any) -> SessionData | None:
         if self._data is None:
             return
 
         return self.data_parser.parse_obj(raw_json)
 
-
     @staticmethod
     def get_cookie_serializer(
-        secret_key: str
+            secret_key: str
     ) -> Callable[..., Serializer]:
         def inner() -> Serializer:
-            serializer = Serializer(
+            serializer = URLSafeSerializer(
                 secret_key
             )
 
             return serializer
-        return inner
 
+        return inner
 
     @staticmethod
     def generate_session_id(nbytes: int = 32) -> str:
         return secrets.token_hex(nbytes)
 
-
     @property
     def _redis_key(self) -> str:
         return f'{self.redis_prefix}:{self.session_id}'
-
 
     @property
     def data(self) -> SessionData:
@@ -89,11 +80,9 @@ class Session(Generic[SessionData]):
 
         return self._data
 
-
     @data.setter
     def data(self, new_value: SessionData):
         self._data = new_value
-
 
     async def load(self) -> SessionData | None:
         raw_json = await self.redis.get(self._redis_key)
@@ -108,7 +97,6 @@ class Session(Generic[SessionData]):
 
         return self._data
 
-
     @classmethod
     async def create_and_load(
         cls,
@@ -120,34 +108,42 @@ class Session(Generic[SessionData]):
         cookie_name: str = 'session_id'
     ) -> Self:
         # TODO: Think a more dynamic and better way to do this. This works for now
+        serializer_provider = Session.get_cookie_serializer(cookie_sign_key)
+        serializer = serializer_provider()
+
+        try:
+            session_id = serializer.loads(signed_session_id)
+        except BadSignature:
+            raise NOT_AUTHENTICATED
 
         session = cls(
             redis_connection,
-            signed_session_id,
+            session_id,
             session_data_parser,
             cookie_sign_key,
             redis_prefix,
             cookie_name
         )
 
+
         await session.load()
 
         return session
 
-
     @classmethod
     async def create_and_save(
-        cls,
-        redis_connection: Redis,
-        session_data: SessionData,
-        signed_session_id: str,
-        cookie_sign_key: str,
-        redis_prefix: str = 'session',
-        cookie_name: str = 'session_id'
+            cls,
+            redis_connection: Redis,
+            session_data: SessionData,
+            cookie_sign_key: str,
+            redis_prefix: str = 'session',
+            cookie_name: str = 'session_id'
     ) -> Self:
+        session_id = Session.generate_session_id()
+
         session = cls(
             redis_connection,
-            signed_session_id,
+            session_id,
             session_data.__class__,
             cookie_sign_key,
             redis_prefix,
@@ -167,24 +163,23 @@ class Session(Generic[SessionData]):
         raw_data = self._data.json()
         await self.redis.set(self._redis_key, raw_data)
 
-
-    # TODO: Implement asymetric encryption for the session_id in a cookie, as far as I am concerned it's called "signed cookies"
     def set_cookie(self, response: Response) -> None:
-        cookie_value = self.serializer.loads(self.session_id)
+        cookie_value = self.serializer.dumps(self.session_id)
+        if not isinstance(cookie_value, str):
+            return
+
         response.set_cookie(
             self.cookie_name,
             value=cookie_value,
-            secure=False, # TODO: Should be True in production
+            secure=False,  # TODO: Should be True in production, provide a way to configure this
             httponly=True,
             samesite='lax'
         )
-
 
     def delete_cookie(self, response: Response) -> None:
         response.delete_cookie(
             self.cookie_name
         )
-
 
     async def destroy(self, response: Response) -> None:
         await self.redis.delete(self._redis_key)

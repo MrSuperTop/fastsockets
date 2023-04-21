@@ -3,29 +3,29 @@ from pathlib import Path
 import uvicorn
 from fastapi import Depends, FastAPI
 
-from examples.websockets_auth.endpoints.auth import router as auth_router
+from examples.websockets_auth.routes.auth.endpoints import router as auth_router
 from examples.websockets_auth.session import session_provider
-from fastsockets import Handlers, HandlersExecutor
-from fastsockets.auth.Session import Session, SessionData
+from fastsockets import Handlers
+from fastsockets.auth.Session import Session
+from fastsockets.handlers.Executor import HandlersExecutor
 
 app = FastAPI()
 app.include_router(auth_router)
 
-handlers_locations = Path(__file__).parent.glob('**/handlers/*.py')
-handlers = Handlers(handlers_locations)
+handlers_location = Path(__file__).parent.glob('**/handlers/*.py')
+handlers = Handlers(handlers_location)
 
 
 @app.websocket('/ws')
 async def main_ws(
     handlers_executor: HandlersExecutor = Depends(handlers.get_executor),
-    session: Session[SessionData] = Depends(session_provider),
+    session: Session = Depends(session_provider)
 ) -> None:
-    print(session.data.user_id, 'connected')
+    print(f'Established a connection: {session.data = }')
 
     await handlers_executor.accept()
     await handlers_executor.handle_messages()
 
-    # * Disconnected logic
     print('Disconnected!')
 
 

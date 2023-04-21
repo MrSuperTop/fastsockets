@@ -2,56 +2,33 @@ from argon2.exceptions import VerificationError
 from fastapi import APIRouter, Depends, Response
 from redis.asyncio import Redis
 
-from examples.auth.db.models.User import User
-from examples.auth.endpoints.exceptions import (
+from examples.websockets_auth.db import get_user, get_user_by_id, users_db
+from examples.websockets_auth.db.models.User import User
+from examples.websockets_auth.dependencies.not_authenticated import not_authenticated
+from examples.websockets_auth.get_redis import get_redis
+from examples.websockets_auth.hasher import ph
+from examples.websockets_auth.routes.auth.exceptions import (
     INVALID_USER_CREDENTIALS,
     USER_ALREADY_EXISTS,
     USER_NOT_FOUND,
 )
-from examples.auth.get_redis import get_redis
-from examples.auth.hasher import ph
-from examples.auth.models.login import LoginInput, LoginResponse, PublicUser
-from examples.auth.models.logout import LogoutResponse
-from examples.auth.models.register import RegisterInput, RegisterResponse
-from examples.auth.session import SessionData, session_provider
+from examples.websockets_auth.routes.auth.inputs.login import (
+    LoginInput,
+    LoginResponse,
+    PublicUser,
+)
+from examples.websockets_auth.routes.auth.inputs.logout import LogoutResponse
+from examples.websockets_auth.routes.auth.inputs.register import (
+    RegisterInput,
+    RegisterResponse,
+)
+from examples.websockets_auth.session import SessionData, session_provider
 from fastsockets.auth.Session import Session
+from fastsockets.auth.SessionProvider import EXAMPLE_SIGN_SECRET
 
 router = APIRouter()
 
-GENERIC_PASSWORD = 'password'
-
-# TODO: Implement a proper db connection
-users = [
-    User(
-        id=5,
-        email='bob@gmail.com',
-        username='bob',
-        password=ph.hash(GENERIC_PASSWORD),
-        bio='hi its me'
-    )
-]
-
-
-async def get_user(usernameOrEmail: str) -> User | None:
-    try:
-        return next(
-            user for user in users if user.username == usernameOrEmail \
-                or user.email == usernameOrEmail
-        )
-    except StopIteration:
-        return None
-
-
-async def get_user_by_id(user_id: int) -> User | None:
-    try:
-        return next(
-            user for user in users if user.id == user_id
-        )
-    except StopIteration:
-        return None
-
-
-@router.post('/login')
+@router.post('/login', dependencies=[Depends(not_authenticated)])
 async def login(
     credentials: LoginInput,
     response: Response,
@@ -72,7 +49,8 @@ async def login(
 
     session = await Session.create_and_save(
         redis,
-        session_data
+        session_data,
+        EXAMPLE_SIGN_SECRET
     )
 
     session.set_cookie(response)
@@ -82,7 +60,7 @@ async def login(
     )
 
 
-@router.post('/register')
+@router.post('/register', dependencies=[Depends(not_authenticated)])
 async def register(
     data: RegisterInput,
     response: Response,
@@ -93,11 +71,11 @@ async def register(
         raise USER_ALREADY_EXISTS
 
     new_user = User.parse_obj({
-        "id": users[-1].id + 1,
+        "id": users_db[-1].id + 1,
         **data.dict()
     })
 
-    users.append(new_user)
+    users_db.append(new_user)
 
     session_data = SessionData(
         user_id=new_user.id
@@ -106,12 +84,13 @@ async def register(
     # FIXME
     new_session = await Session.create_and_save(
         redis,
-        session_data
+        session_data,
+        EXAMPLE_SIGN_SECRET
     )
 
     new_session.set_cookie(response)
 
-    # TODO: Implement storing session data. Either using redis or in the primary db, as this data is not that latency critical
+    # TODO: Implement storing additional session data. Either using redis or in the primary db, as this data is not that latency critical
 
     return RegisterResponse(
         user=PublicUser.parse_obj(new_user)

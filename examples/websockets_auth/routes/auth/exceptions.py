@@ -10,11 +10,6 @@ USER_ALREADY_EXISTS = HTTPException(
     'This user already exists'
 )
 
-NOT_AUTHENTICATED = HTTPException(
-    status.HTTP_401_UNAUTHORIZED,
-    'You should login first'
-)
-
 USER_NOT_FOUND = HTTPException(
     status.HTTP_404_NOT_FOUND,
     'User not found'
