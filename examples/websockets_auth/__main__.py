@@ -22,9 +22,10 @@ async def main_ws(
     session: Session = Depends(session_provider)
 ) -> None:
     print(f'Established a connection: {session.data = }')
+    handlers_executor.saturate(session)
 
-    await handlers_executor.accept()
-    await handlers_executor.handle_messages()
+    async with handlers_executor:
+        await handlers_executor.handle_messages()
 
     print('Disconnected!')
 

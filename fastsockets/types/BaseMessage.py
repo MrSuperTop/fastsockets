@@ -12,4 +12,5 @@ class BaseMessage(ABC, GenericModel, Generic[Payload]):
     payload: Payload
 
     class Config:
+        arbitrary_types_allowed = True
         extra = 'allow'

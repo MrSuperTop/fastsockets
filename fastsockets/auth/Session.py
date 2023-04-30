@@ -21,8 +21,9 @@ DEFAULT_SESSION_ID_LENGHT = 32
 SessionData = TypeVar('SessionData', bound=BaseSessionData)
 
 
+# TODO: Create more extensible API for passing CookieSerializer and other stuff
+# TODO: Look at the SessionMiddleware from starlette
 class Session(Generic[SessionData]):
-    # TODO: Create more extensible API for passing CookieSerializer and other stuff
     def __init__(
         self,
         redis_connection: Redis,

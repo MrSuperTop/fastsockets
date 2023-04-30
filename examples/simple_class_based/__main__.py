@@ -15,8 +15,8 @@ handlers = Handlers(handlers_locations)
 async def main_ws(
     handlers_executor: HandlersExecutor = Depends(handlers.get_executor)
 ) -> None:
-    await handlers_executor.accept()
-    await handlers_executor.handle_messages()
+    async with handlers_executor:
+        await handlers_executor.handle_messages()
 
     # * Disconnected logic
     print('Disconnected!')
