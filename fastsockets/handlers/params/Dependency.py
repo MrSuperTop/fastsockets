@@ -7,6 +7,7 @@ DependencyResult = TypeVar('DependencyResult')
 OtherArguments = ArgumentsMapping
 
 
+# TODO: Make the dependecies interchangable with fastapi dependencies
 class Dependency(Generic[DependencyArguments, DependencyResult]):
     def __init__(
         self,

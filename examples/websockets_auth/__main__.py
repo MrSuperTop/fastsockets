@@ -5,25 +5,21 @@ from fastapi import Depends, FastAPI
 
 from examples.websockets_auth.routes.auth.endpoints import router as auth_router
 from examples.websockets_auth.session import session_provider
-from fastsockets import Handlers
-from fastsockets.auth.Session import Session
-from fastsockets.handlers.Executor import HandlersExecutor
+from fastsockets import AuthHandlers, SessionHandlersExecutor, Session
 
 app = FastAPI()
 app.include_router(auth_router)
 
 handlers_location = Path(__file__).parent.glob('**/handlers/*.py')
-handlers = Handlers(handlers_location)
+handlers = AuthHandlers(handlers_location, session_provider)
 
 
 @app.websocket('/ws')
 async def main_ws(
-    handlers_executor: HandlersExecutor = Depends(handlers.get_executor),
+    handlers_executor: SessionHandlersExecutor = Depends(handlers.get_executor),
     session: Session = Depends(session_provider)
 ) -> None:
     print(f'Established a connection: {session.data = }')
-    handlers_executor.saturate(session)
-
     async with handlers_executor:
         await handlers_executor.handle_messages()
 

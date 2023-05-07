@@ -1,6 +1,6 @@
 from typing import Callable, Generic
 
-from fastapi import Cookie
+from fastapi import Cookie, Depends
 from redis.asyncio import Redis
 
 from fastsockets.auth.Session import (
@@ -11,8 +11,17 @@ from fastsockets.auth.Session import (
 )
 from fastsockets.exceptions import NOT_AUTHENTICATED
 
-# FIXME: Move to a more suitable place
+# FIXME: Move to a more suitable place by implementing a Config class
 EXAMPLE_SIGN_SECRET = 'example_secret_key'
+
+
+def get_session_id(
+    session_id: str | None = Cookie(default=None)
+) -> str:
+    if session_id is None:
+        raise NOT_AUTHENTICATED
+
+    return session_id
 
 
 class SessionProvider(Generic[SessionData]):
@@ -33,11 +42,8 @@ class SessionProvider(Generic[SessionData]):
 
     async def __call__(
         self,
-        session_id: str | None = Cookie(default=None)
+        session_id: str = Depends(get_session_id)
     ) -> Session[SessionData]:
-        if session_id is None:
-            raise NOT_AUTHENTICATED
-
         loaded_session = await Session.create_and_load(
             self.redis,
             session_id,

@@ -17,3 +17,11 @@ class PongPayload(BaseModel):
 
 class PongMessage(BaseMessage[PongPayload]):
     action: Literal['pong']
+
+
+class NotificationPayload(BaseModel):
+    message: str
+    level: int
+
+class NotificationMessage(BaseMessage[NotificationPayload]):
+    action: Literal['notification']
