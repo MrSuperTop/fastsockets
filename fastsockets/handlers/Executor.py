@@ -3,8 +3,8 @@ from typing import (
     Any,
     Generic,
     Self,
-    TypeVar,
     TypedDict,
+    TypeVar,
     cast,
 )
 
@@ -26,7 +26,7 @@ AdditionalDependencies = TypeVar(
     bound=BaseAdditionalDependencies
 )
 
-# TODO: Remake this into a custom connection class inheriting from fastapi.websockets.WebSocket, this wrapper is not really reasonable
+# TODO: Better naming for this classes... Making a subclass does not seem to be convenient https://stackoverflow.com/questions/75278075/fastapi-custom-websocket-object
 class HandlersExecutor(Generic[AdditionalDependencies]):
     def __init__(
         self,

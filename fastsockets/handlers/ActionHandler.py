@@ -1,21 +1,15 @@
 import inspect
-from typing import (
-    Any,
-    Callable,
-    Coroutine,
-    ForwardRef,
-    Generic,
-    ParamSpec,
-    TypeVar,
-)
+from typing import (Any, Callable, Coroutine, ForwardRef, Generic, ParamSpec,
+                    TypeVar, cast)
 
 from pydantic import BaseModel, create_model
 from pydantic.fields import FieldInfo, ModelField
 from pydantic.typing import evaluate_forwardref
 from pydantic.utils import lenient_issubclass
 
-from fastsockets.handlers.BaseActionHandler import ArgumentsMapping, BaseActionHandler
-from fastsockets.handlers.params.Dependency import Dependency
+from fastsockets.handlers.BaseActionHandler import (ArgumentsMapping,
+                                                    BaseActionHandler)
+from fastsockets.handlers.params.Dependency import Dependency, DependencyCache
 from fastsockets.types.BaseMessage import BaseMessage
 
 ResponseMessage = TypeVar('ResponseMessage', bound=BaseMessage)
@@ -138,10 +132,16 @@ def create_data_validator(
     DataValidator = create_model(
         f'{action_name.capitalize()}Validator',
         __base__=BaseMessage,
-        **additional_params
-    )
+
+        # * casting to any, as the typing for the values in the ArgumentsMapping
+        # * dict does not satisfy the typing requirements for other function arguments
+        # * like __config__, not really sure how to fix it so that the type hints for
+        # * this function's arguments is preserved, therefore, casting to Any
+        **cast(Any, additional_params),
+   )
 
     return DataValidator
+
 
 # ? Waiting for https://peps.python.org/pep-0696/
 # ? Waiting for https://peps.python.org/pep-0695/
@@ -169,40 +169,15 @@ class ActionHandler(Generic[ValidData, ResponseMessage]):
         self.data_validator = DataValidator
         self.response_validator = response_type
 
-
-    # TODO: Implement using the use_cache property on the Dependency instance
-    def _prepare_dependency_arguments(
-        self,
-        present_data: ValidData,
-        dependency: Dependency
-    ) -> dict[str, Any]:
-        needed_aguments = {}
-        if dependency.other_arguments is not None:
-            for key in dependency.other_arguments.keys():
-                needed_aguments[key] = getattr(present_data, key)
-
-        if dependency.depends_on is not None:
-            for name, child_dependency in dependency.depends_on.items():
-                child_needed_arguments = self._prepare_dependency_arguments(
-                    present_data,
-                    child_dependency
-                )
-
-                needed_aguments[name] = child_dependency.callable(
-                    **child_needed_arguments
-                )
-
-        return needed_aguments
-
-
     async def __call__(self, validated_data: ValidData) -> ResponseMessage | None:
         needed_data = {}
+        dependency_cache: DependencyCache = {}
+
         for key in self.arguments.keys():
             needed_data[key] = getattr(validated_data, key)
 
         for dependency_name, dependency in self.dependencies.items():
-            arguments = self._prepare_dependency_arguments(validated_data, dependency)
-            needed_data[dependency_name] = dependency.callable(**arguments)
+            needed_data[dependency_name] = dependency(validated_data, dependency_cache)
 
         result = await self.handle_callable(**needed_data)
 

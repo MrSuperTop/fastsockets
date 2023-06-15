@@ -1,8 +1,9 @@
 from abc import ABC, abstractmethod
 from typing import Any, Generic, TypeVar
 
-from fastsockets.types.BaseMessage import BaseMessage
 from pydantic.fields import FieldInfo, ModelField
+
+from fastsockets.types.BaseMessage import BaseMessage
 
 ResponseMessage = TypeVar('ResponseMessage', bound=BaseMessage)
 ArgumentsMapping = dict[str, tuple[Any, FieldInfo | ModelField]]

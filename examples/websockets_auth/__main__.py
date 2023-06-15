@@ -5,7 +5,8 @@ from fastapi import Depends, FastAPI
 
 from examples.websockets_auth.routes.auth.endpoints import router as auth_router
 from examples.websockets_auth.session import session_provider
-from fastsockets import AuthHandlers, SessionHandlersExecutor, Session
+from fastsockets import AuthHandlers, Session, SessionHandlersExecutor
+
 
 app = FastAPI()
 app.include_router(auth_router)
